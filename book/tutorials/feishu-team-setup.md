@@ -28,31 +28,48 @@
 │                    (Feishu Gateway)                             │
 └─────────────┬───────────────────────────────────────────────────┘
               │
-    ┌─────────┼─────────┬─────────────┬─────────────┐
+    ┌─────────┴─────────┬─────────────┬─────────────┐
     │         │         │             │             │
     ▼         ▼         ▼             ▼             ▼
 ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐ ┌──────────┐
-│ PM     │ │ Architect│ │ Coder │ │ Reviewer │ │  Test   │
-│ Agent  │ │ Agent  │ │ Agent  │ │ Agent    │ │  Agent   │
+│ PM     │ │Architect│ │Coder   │ │Reviewer  │ │ Tester   │
+│ Agent  │ │Agent   │ │Agent   │ │Agent     │ │ Agent    │
 └───┬────┘ └───┬────┘ └───┬────┘ └────┬─────┘ └────┬─────┘
     │          │         │           │            │
     └──────────┴────┬────┴───────────┴────────────┘
                     │
          ┌──────────▼──────────┐
-         │   Shared Memory     │
-         │   (项目知识库)       │
+         │  共享任务目录         │
+         │  shared-tasks/      │
+         │  - architect/       │
+         │  - coder/           │
+         │  - reviewer/        │
+         │  - tester/          │
          └─────────────────────┘
 ```
 
 ### 1.2 Agent 职责分工
 
-| Agent | 职责 | 飞书群组 | 模型推荐 |
+| Agent | 职责 | 监听目录 | 输出目录 |
 |-------|------|----------|----------|
-| **PM Agent** | 需求分析、任务分解、进度跟踪 | 项目管理群 | claude-opus-4-6 |
-| **Architect Agent** | 技术设计、架构评审、技术方案 | 架构设计群 | claude-opus-4-6 |
-| **Coder Agent** | 代码实现、Code Review 修复 | 开发群 | claude-sonnet-4-6 |
-| **Reviewer Agent** | 代码审查、安全检查、质量把控 | 代码审查群 | claude-opus-4-6 |
-| **Test Agent** | 测试用例、自动化测试、Bug 验证 | 测试群 | claude-sonnet-4-6 |
+| **PM Agent** | 需求分析、任务分解、流程协调 | - | 创建初始任务 |
+| **Architect Agent** | 技术设计、架构评审 | `architect/pending/` | `architect/completed/` |
+| **Coder Agent** | 代码实现、Bug 修复 | `coder/pending/` | `coder/completed/` |
+| **Reviewer Agent** | 代码审查、安全检查 | `reviewer/pending/` | `reviewer/completed/` |
+| **Tester Agent** | 测试用例、自动化测试 | `tester/pending/` | `tester/completed/` |
+
+### 1.3 协作流程
+
+```
+PM → Architect → Coder → Reviewer → Tester → PM
+     (设计)    (实现)   (审查)    (测试)   (完成)
+```
+
+**任务传递机制**：
+1. 每个 Agent 监听自己的 `pending/` 目录
+2. 完成后在 `completed/` 目录输出结果
+3. 自动创建下一个 Agent 的任务文件
+4. 最终通知 PM 任务完成
 
 ---
 
@@ -238,6 +255,33 @@ node --version
 | Coder | qwen3-coder-plus | 专用编程模型 |
 | Reviewer | qwen3.5-plus | 综合能力强 |
 | Tester | qwen3-coder-next | 快速生成测试 |
+
+### 5.3 共享任务目录
+
+创建共享任务目录实现 Agent 间协作：
+
+```bash
+mkdir -p C:/Users/gmfen/.openclaw/shared-tasks/{architect,coder,reviewer,tester}/{pending,completed}
+mkdir -p C:/Users/gmfen/.openclaw/shared-tasks/notifications
+```
+
+**目录结构**：
+```
+shared-tasks/
+├── architect/
+│   ├── pending/     # PM 创建的架构任务
+│   └── completed/   # Architect 完成的设计
+├── coder/
+│   ├── pending/     # Architect 创建的开发任务
+│   └── completed/   # Coder 完成的代码
+├── reviewer/
+│   ├── pending/     # Coder 创建的审查任务
+│   └── completed/   # Reviewer 完成的审查
+├── tester/
+│   ├── pending/     # Reviewer 创建的测试任务
+│   └── completed/   # Tester 完成的测试
+└── notifications/   # 完成通知日志
+```
 
 ---
 
