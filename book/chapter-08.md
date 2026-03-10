@@ -647,6 +647,347 @@ OpenClaw 支持多种 Agent 间通信方式：
 }
 ```
 
+### 8.7.2 agentToAgent 配置参考
+
+`agentToAgent` 配置允许一个 Agent 直接调用另一个 Agent。配置格式如下：
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "main",
+        workspace: "~/.openclaw/workspace-main",
+        model: "anthropic/claude-opus-4-6",
+
+        // agentToAgent 配置
+        agentToAgent: {
+          // 允许调用的目标 Agent 列表
+          allowedTargets: ["coder", "reviewer", "researcher"],
+
+          // 调用模式
+          mode: "async",  // "sync" | "async" | "fire-and-forget"
+
+          // 默认超时（秒）
+          timeout: 300,
+
+          // 重试配置
+          retry: {
+            maxAttempts: 3,
+            delay: 5
+          }
+        }
+      },
+      {
+        id: "coder",
+        workspace: "~/.openclaw/workspace-coder",
+        model: "anthropic/claude-sonnet-4-6",
+
+        // 子代理配置（被调用时）
+        subAgent: {
+          // 允许被调用
+          enabled: true,
+
+          // 输入验证
+          inputSchema: {
+            type: "object",
+            required: ["task"],
+            properties: {
+              task: { type: "string" },
+              language: { type: "string", enum: ["python", "javascript", "rust"] },
+              testRequired: { type: "boolean" }
+            }
+          },
+
+          // 输出处理
+          output: {
+            format: "diff",  // "diff" | "full" | "summary"
+            includeTests: true
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### 8.7.3 完整 agentToAgent 配置示例
+
+**场景：Main Agent 调用 Coder Agent 和 Reviewer Agent**
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "main",
+        workspace: "~/.openclaw/workspace-main",
+        model: "anthropic/claude-opus-4-6",
+
+        agentToAgent: {
+          // 定义可调用的目标
+          targets: {
+            coder: {
+              // 目标 Agent ID
+              agentId: "coder",
+
+              // 调用方式
+              invokeMode: "sync",  // sync=等待结果，async=后台执行
+
+              // 超时配置
+              timeout: 600,
+
+              // 传递的上下文
+              context: {
+                pass: ["conversationId", "userId", "preferences"],
+                omit: ["authToken"]
+              },
+
+              // 输入映射（将当前上下文映射到子代理输入）
+              inputMap: {
+                task: "${currentTask.description}",
+                files: "${workspace.modifiedFiles}",
+                instructions: "${currentTask.instructions}"
+              }
+            },
+
+            reviewer: {
+              agentId: "reviewer",
+              invokeMode: "sync",
+              timeout: 300,
+              inputMap: {
+                diff: "${lastCommit.diff}",
+                guidelines: "${reviewGuidelines}"
+              }
+            },
+
+            researcher: {
+              agentId: "researcher",
+              invokeMode: "async",  // 异步执行
+              timeout: 900,
+              callback: {
+                // 完成后通知
+                notify: true,
+                target: "main",
+                event: "research:complete"
+              }
+            }
+          },
+
+          // 编排规则
+          orchestration: {
+            // 链式调用：main -> coder -> reviewer
+            chain: ["coder", "reviewer"],
+
+            // 或者并行调用
+            parallel: {
+              agents: ["coder", "researcher"],
+              waitForAll: true
+            }
+          }
+        }
+      },
+
+      {
+        id: "coder",
+        workspace: "~/.openclaw/workspace-coder",
+        model: "anthropic/claude-sonnet-4-6",
+
+        subAgent: {
+          enabled: true,
+          // 能力声明（供调用方了解）
+          capabilities: [
+            "code-generation",
+            "refactoring",
+            "bug-fix",
+            "test-writing"
+          ],
+          // 支持的编程语言
+          languages: ["python", "javascript", "typescript", "rust", "go"],
+          // 输出配置
+          output: {
+            format: "patch",
+            includeExplanation: true
+          }
+        }
+      },
+
+      {
+        id: "reviewer",
+        workspace: "~/.openclaw/workspace-reviewer",
+        model: "anthropic/claude-opus-4-6",
+
+        subAgent: {
+          enabled: true,
+          capabilities: [
+            "code-review",
+            "security-audit",
+            "performance-check"
+          ],
+          // 审查配置
+          review: {
+            checkSecurity: true,
+            checkPerformance: true,
+            checkStyle: true,
+            suggestImprovements: true
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### 8.7.4 在 AGENTS.md 中声明 agentToAgent 能力
+
+```markdown
+# AGENTS.md - Main Agent
+
+## 可调用的子代理
+
+| 子代理 | 用途 | 调用命令 |
+|--------|------|----------|
+| @coder | 代码编写 | `/delegate coder <task>` |
+| @reviewer | 代码审查 | `/delegate reviewer <diff>` |
+| @researcher | 网络调研 | `/delegate researcher <query>` |
+
+## 委派配置
+
+```agent-to-agent
+targets:
+  - id: coder
+    command: "openclaw agent invoke coder"
+    mode: sync
+    timeout: 600
+    input:
+      task: "${task}"
+      context: "${context}"
+
+  - id: reviewer
+    command: "openclaw agent invoke reviewer"
+    mode: sync
+    timeout: 300
+    input:
+      diff: "${diff}"
+```
+
+## 使用示例
+
+```bash
+# 同步调用（等待结果）
+result=$(openclaw agent invoke coder --sync --input '{"task":"实现排序"}')
+
+# 异步调用（后台执行）
+openclaw agent invoke coder --async --input '{"task":"优化查询"}'
+
+# 链式调用
+openclaw agent chain coder reviewer --input '{"task":"实现并审查用户登录"}'
+
+# 并行调用
+openclaw agent parallel coder researcher --input '{"task":"实现新功能"}'
+```
+```
+
+### 8.7.5 agentToAgent API 参考
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `agentId` | string | 是 | 目标 Agent ID |
+| `invokeMode` | string | 否 | `sync`/`async`/`fire-and-forget`，默认 `sync` |
+| `timeout` | number | 否 | 超时秒数，默认 300 |
+| `input` | object | 是 | 传递给子代理的输入 |
+| `context` | object | 否 | 上下文传递配置 |
+| `callback` | object | 否 | 异步回调配置 |
+| `retry` | object | 否 | 重试配置 |
+
+### 8.7.6 使用示例
+
+**在代码中调用子代理**：
+
+```bash
+#!/bin/bash
+# 调用 Coder Agent 实现功能
+
+# 同步调用并获取结果
+response=$(openclaw agent invoke coder \
+  --mode sync \
+  --timeout 600 \
+  --input '{
+    "task": "实现用户登录功能",
+    "requirements": [
+      "支持邮箱和密码登录",
+      "支持 JWT token",
+      "包含错误处理"
+    ],
+    "language": "python"
+  }')
+
+# 解析响应
+code=$(echo "$response" | jq -r '.code')
+tests=$(echo "$response" | jq -r '.tests')
+
+# 将代码传递给 Reviewer Agent
+review=$(echo "$code" | openclaw agent invoke reviewer \
+  --mode sync \
+  --input '{
+    "diff": "'"$code"'",
+    "checkSecurity": true,
+    "checkPerformance": true
+  }')
+
+echo "$review"
+```
+
+**Python SDK 调用**：
+
+```python
+from openclaw import AgentClient
+
+# 创建客户端
+client = AgentClient()
+
+# 同步调用
+result = client.invoke(
+    agent_id="coder",
+    input={
+        "task": "实现快速排序",
+        "language": "python"
+    },
+    mode="sync",
+    timeout=600
+)
+
+print(result.code)
+print(result.explanation)
+
+# 异步调用
+task_id = client.invoke(
+    agent_id="researcher",
+    input={"query": "最新 Python 异步编程最佳实践"},
+    mode="async",
+    callback=lambda result: print(result.summary)
+)
+
+# 等待异步任务完成
+result = client.wait(task_id)
+```
+
+### 8.7.7 诊断命令
+
+```bash
+# 查看 agentToAgent 状态
+openclaw agents status --agent-to-agent
+
+# 测试子代理调用
+openclaw agent test-invoke coder --input '{"task":"test"}'
+
+# 查看调用历史
+openclaw agent invoke-history --limit 10
+
+# 查看正在进行的调用
+openclaw agent active-invocations
+```
+
 ### 8.7.3 直接消息传递
 
 使用 `openclaw agent send` 命令发送消息到指定 Agent：
@@ -662,7 +1003,7 @@ openclaw agent send reviewer --message "审查这个 PR" --wait
 openclaw agent broadcast --agents "coder,reviewer" --message "开始新迭代"
 ```
 
-### 8.7.4 任务委派配置
+### 8.7.8 任务委派配置
 
 在 AGENTS.md 中配置委派规则：
 
@@ -694,7 +1035,7 @@ openclaw agent broadcast --agents "coder,reviewer" --message "开始新迭代"
 ```
 ```
 
-### 8.7.5 共享状态配置
+### 8.7.9 共享状态配置
 
 配置 Agent 间共享的记忆和状态：
 
@@ -738,7 +1079,7 @@ openclaw agent broadcast --agents "coder,reviewer" --message "开始新迭代"
 }
 ```
 
-### 8.7.6 事件驱动通信
+### 8.7.10 事件驱动通信
 
 配置事件触发器实现松耦合通信：
 
@@ -788,7 +1129,7 @@ openclaw agent broadcast --agents "coder,reviewer" --message "开始新迭代"
 }
 ```
 
-### 8.7.7 子代理调用
+### 8.7.11 子代理调用
 
 在 AGENTS.md 中配置子代理调用：
 
@@ -829,7 +1170,7 @@ echo "$result" | openclaw agent invoke reviewer
 ```
 ```
 
-### 8.7.8 会话状态传递
+### 8.7.12 会话状态传递
 
 配置跨 Agent 的会话状态：
 
@@ -860,7 +1201,7 @@ echo "$result" | openclaw agent invoke reviewer
 }
 ```
 
-### 8.7.9 完整工作流示例
+### 8.7.13 完整工作流示例
 
 **场景：代码开发工作流**
 
@@ -933,7 +1274,7 @@ openclaw workflow logs code-development --step implement
 
 ---
 
-## 8.8 诊断和调试
+## 8.9 诊断和调试
 
 ### 8.7.1 诊断命令
 
