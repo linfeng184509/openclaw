@@ -1,0 +1,591 @@
+# 第 8 章：多代理路由
+
+> 本章概述：讲解如何配置多个隔离的 Agent，实现多账号管理、多用户共享网关、以及基于角色的消息路由。
+
+## 学习目标
+
+- 理解多代理架构和隔离边界
+- 学会配置多个 Agent 工作区
+- 掌握 Binding 路由规则
+- 实现多账号和多用户场景
+
+## 前置条件
+
+- 已完成基础 Gateway 配置
+- 了解 Agent 工作区结构
+
+---
+
+## 8.1 多代理架构概述
+
+### 8.1.1 什么是 Agent
+
+一个 **Agent** 是一个完全隔离的 AI 大脑，拥有独立的：
+
+| 组件 | 说明 | 存储位置 |
+|------|------|----------|
+| **工作区** | 文件、AGENTS.md、SOUL.md、USER.md | `~/.openclaw/workspace-<agentId>` |
+| **状态目录** | 认证 Profile、模型注册表 | `~/.openclaw/agents/<agentId>/agent` |
+| **会话存储** | 聊天历史、路由状态 | `~/.openclaw/agents/<agentId>/sessions` |
+
+**重要提示**：
+- 认证 Profile 是每个 Agent 独立的
+- 不要在不同 Agent 间复用 `agentDir`
+- 如需共享凭据，复制 `auth-profiles.json`
+
+### 8.1.2 单代理 vs 多代理
+
+**单代理模式（默认）**：
+```json5
+{
+  // 不配置 agents.list 时使用默认
+  // agentId 默认为 "main"
+  // 会话键：agent:main:<mainKey>
+}
+```
+
+**多代理模式**：
+```json5
+{
+  agents: {
+    list: [
+      { id: "main", workspace: "~/.openclaw/workspace" },
+      { id: "coding", workspace: "~/.openclaw/workspace-coding" },
+      { id: "social", workspace: "~/.openclaw/workspace-social" }
+    ]
+  }
+}
+```
+
+### 8.1.3 多代理应用场景
+
+| 场景 | 说明 |
+|------|------|
+| **多用户共享** | 多人共享网关，独立数据和人格 |
+| **多账号管理** | 多个 WhatsApp/Telegram 账号 |
+| **专业分工** | 编程代理、社交代理、研究代理 |
+| **测试隔离** | 生产代理 vs 测试代理 |
+
+---
+
+## 8.2 创建和配置 Agent
+
+### 8.2.1 使用向导创建 Agent
+
+```bash
+# 创建新的 Agent
+openclaw agents add coding
+
+# 创建并查看
+openclaw agents list --bindings
+```
+
+### 8.2.2 手动配置多 Agent
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        // 主代理
+        id: "main",
+        workspace: "~/.openclaw/workspace",
+        model: "anthropic/claude-opus-4-6"
+      },
+      {
+        // 编程代理
+        id: "coding",
+        workspace: "~/.openclaw/workspace-coding",
+        agentDir: "~/.openclaw/agents/coding/agent",
+        model: "openai/gpt-5.4",
+        tools: {
+          profile: "coding"
+        }
+      },
+      {
+        // 社交代理
+        id: "social",
+        workspace: "~/.openclaw/workspace-social",
+        agentDir: "~/.openclaw/agents/social/agent",
+        model: "google/gemini-3.1-pro"
+      }
+    ]
+  }
+}
+```
+
+### 8.2.3 Agent 工作区文件
+
+每个 Agent 工作区包含：
+
+```
+~/.openclaw/workspace-coding/
+├── AGENTS.md          # 操作指令
+├── SOUL.md            # 人格设定
+├── USER.md            # 用户信息
+├── IDENTITY.md        # Agent 身份
+├── TOOLS.md           # 工具说明
+├── memory/            # 记忆日志
+│   └── YYYY-MM-DD.md
+└── skills/            # 专属技能
+```
+
+---
+
+## 8.3 多账号配置
+
+### 8.3.1 WhatsApp 多账号
+
+```json5
+{
+  channels: {
+    whatsapp: {
+      // 默认账号
+      dmPolicy: "allowlist",
+      allowFrom: ["+15551234567"],
+
+      // 多账号配置
+      accounts: {
+        personal: {
+          dmPolicy: "allowlist",
+          allowFrom: ["+15551111111", "+15552222222"]
+        },
+        work: {
+          dmPolicy: "pairing",
+          allowFrom: ["+15553333333"]
+        }
+      }
+    }
+  }
+}
+```
+
+**链接多个 WhatsApp 设备**：
+```bash
+# 链接工作账号
+openclaw channels login --channel whatsapp --account work
+
+# 链接个人账号
+openclaw channels login --channel whatsapp --account personal
+```
+
+### 8.3.2 Telegram 多账号
+
+```json5
+{
+  channels: {
+    telegram: {
+      // 默认账号
+      botToken: "123:abc",
+      dmPolicy: "pairing",
+
+      // 多账号配置
+      accounts: {
+        default: {
+          botToken: "123:abc",
+          dmPolicy: "pairing"
+        },
+        support: {
+          botToken: "456:def",
+          dmPolicy: "allowlist",
+          allowFrom: ["123456789"]
+        }
+      }
+    }
+  }
+}
+```
+
+### 8.3.3 Discord 多账号
+
+```json5
+{
+  channels: {
+    discord: {
+      // 默认账号
+      token: "bot-token-1",
+      groupPolicy: "allowlist",
+
+      // 多账号配置
+      accounts: {
+        primary: {
+          token: "bot-token-1",
+          guilds: {
+            "guild-id-1": { requireMention: true }
+          }
+        },
+        secondary: {
+          token: "bot-token-2",
+          guilds: {
+            "guild-id-2": { requireMention: false }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## 8.4 Binding 路由规则
+
+### 8.4.1 Binding 匹配优先级
+
+Binding 采用**最具体匹配优先**原则：
+
+```mermaid
+flowchart TD
+    A[消息到达] --> B{1. peer 匹配}
+    B -->|命中| K[选择对应 Agent]
+    B -->|未命中| C{2. parentPeer 匹配}
+    C -->|命中| K
+    C -->|未命中| D{3. Discord 角色匹配}
+    D -->|命中| K
+    D -->|未命中| E{4. guildId 匹配}
+    E -->|命中| K
+    E -->|未命中| F{5. teamId 匹配}
+    F -->|命中| K
+    F -->|未命中| G{6. accountId 匹配}
+    G -->|命中| K
+    G -->|未命中| H{7. 渠道级 fallback}
+    H -->|命中| K
+    H -->|未命中| I[使用默认 Agent]
+```
+
+**优先级顺序**：
+```
+1. peer 匹配（精确 DM/群组/渠道 ID）
+   ↓
+2. parentPeer 匹配（线程继承）
+   ↓
+3. guildId + roles（Discord 角色路由）
+   ↓
+4. guildId（Discord 服务器）
+   ↓
+5. teamId（Slack 团队）
+   ↓
+6. accountId 匹配
+   ↓
+7. 渠道级匹配（accountId: "*"）
+   ↓
+8. 默认 Agent（default 或第一个）
+```
+
+### 8.4.2 Binding 配置示例
+
+**按发送者路由**：
+```json5
+{
+  bindings: [
+    {
+      // Alex 的消息路由到 alex 代理
+      agentId: "alex",
+      match: {
+        channel: "whatsapp",
+        peer: { kind: "direct", id: "+15551230001" }
+      }
+    },
+    {
+      // Mia 的消息路由到 mia 代理
+      agentId: "mia",
+      match: {
+        channel: "whatsapp",
+        peer: { kind: "direct", id: "+15551230002" }
+      }
+    }
+  ]
+}
+```
+
+**按群组路由**：
+```json5
+{
+  bindings: [
+    {
+      agentId: "main",
+      match: {
+        channel: "telegram",
+        peer: { kind: "group", id: "-1001234567890" }
+      }
+    },
+    {
+      agentId: "support",
+      match: {
+        channel: "telegram",
+        peer: { kind: "group", id: "-1009876543210" }
+      }
+    }
+  ]
+}
+```
+
+**按 Discord 角色路由**：
+```json5
+{
+  bindings: [
+    {
+      agentId: "opus",
+      match: {
+        channel: "discord",
+        guildId: "123456789012345678",
+        roles: ["111111111111111111"]  // VIP 角色
+      }
+    },
+    {
+      agentId: "sonnet",
+      match: {
+        channel: "discord",
+        guildId: "123456789012345678"
+        // 其他成员
+      }
+    }
+  ]
+}
+```
+
+### 8.4.3 完整多用户配置示例
+
+```json5
+{
+  // 两个独立 Agent
+  agents: {
+    list: [
+      {
+        id: "alex",
+        workspace: "~/.openclaw/workspace-alex",
+        model: "anthropic/claude-opus-4-6"
+      },
+      {
+        id: "mia",
+        workspace: "~/.openclaw/workspace-mia",
+        model: "openai/gpt-5.4"
+      }
+    ]
+  },
+
+  // 共享一个 WhatsApp 账号
+  channels: {
+    whatsapp: {
+      dmPolicy: "allowlist",
+      allowFrom: ["+15551230001", "+15551230002"]
+    }
+  },
+
+  // 按发送者路由
+  bindings: [
+    {
+      agentId: "alex",
+      match: {
+        channel: "whatsapp",
+        peer: { kind: "direct", id: "+15551230001" }
+      }
+    },
+    {
+      agentId: "mia",
+      match: {
+        channel: "whatsapp",
+        peer: { kind: "direct", id: "+15551230002" }
+      }
+    }
+  ]
+}
+```
+
+---
+
+## 8.5 账号作用域 Binding
+
+### 8.5.1 账号作用域规则
+
+| Binding 配置 | 匹配行为 |
+|-------------|----------|
+| 无 `accountId` | 仅匹配默认账号 |
+| `accountId: "work"` | 匹配特定账号 |
+| `accountId: "*"` | 匹配所有账号（渠道级 fallback） |
+
+### 8.5.2 账号作用域示例
+
+```json5
+{
+  channels: {
+    whatsapp: {
+      accounts: {
+        personal: { /* 个人账号配置 */ },
+        work: { /* 工作账号配置 */ }
+      }
+    }
+  },
+
+  bindings: [
+    {
+      // 个人账号的 DM 路由到 main 代理
+      agentId: "main",
+      match: {
+        channel: "whatsapp",
+        accountId: "personal",
+        peer: { kind: "direct", id: "+" }
+      }
+    },
+    {
+      // 工作账号的群组路由到 work 代理
+      agentId: "work",
+      match: {
+        channel: "whatsapp",
+        accountId: "work",
+        peer: { kind: "group", id: "group-id" }
+      }
+    },
+    {
+      // 渠道级 fallback（所有账号的未匹配消息）
+      agentId: "fallback",
+      match: {
+        channel: "whatsapp",
+        accountId: "*"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## 8.6 多代理最佳实践
+
+### 8.6.1 家庭共享场景
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "dad",
+        workspace: "~/.openclaw/workspace-dad",
+        model: "anthropic/claude-opus-4-6"
+      },
+      {
+        id: "mom",
+        workspace: "~/.openclaw/workspace-mom",
+        model: "openai/gpt-5.4"
+      },
+      {
+        id: "kids",
+        workspace: "~/.openclaw/workspace-kids",
+        model: "google/gemini-3.1-pro",
+        tools: {
+          deny: ["exec", "browser"]  // 限制工具
+        }
+      }
+    ]
+  },
+
+  bindings: [
+    {
+      agentId: "dad",
+      match: { channel: "telegram", peer: { kind: "direct", id: "dad-id" } }
+    },
+    {
+      agentId: "mom",
+      match: { channel: "telegram", peer: { kind: "direct", id: "mom-id" } }
+    },
+    {
+      agentId: "kids",
+      match: { channel: "telegram", peer: { kind: "direct", id: "kids-id" } }
+    }
+  ]
+}
+```
+
+### 8.6.2 专业分工场景
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "coder",
+        workspace: "~/.openclaw/workspace-coder",
+        tools: { profile: "coding" }
+      },
+      {
+        id: "writer",
+        workspace: "~/.openclaw/workspace-writer",
+        tools: { profile: "messaging" }
+      },
+      {
+        id: "researcher",
+        workspace: "~/.openclaw/workspace-researcher",
+        tools: { allow: ["group:web", "browser"] }
+      }
+    ]
+  }
+}
+```
+
+### 8.6.3 生产/测试隔离
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "production",
+        workspace: "~/.openclaw/workspace-prod",
+        sandbox: { mode: "all" }
+      },
+      {
+        id: "staging",
+        workspace: "~/.openclaw/workspace-staging",
+        sandbox: { mode: "off" }  // 测试环境禁用沙箱
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 8.7 诊断和调试
+
+### 8.7.1 诊断命令
+
+```bash
+# 查看 Agent 列表和 Binding
+openclaw agents list --bindings
+
+# 查看通道状态
+openclaw channels status --probe
+
+# 检查路由
+openclaw gateway call bindings.match --params '{"channel":"whatsapp","peer":"+1234567890"}'
+```
+
+### 8.7.2 日志分析
+
+```bash
+# 查看路由日志
+openclaw logs --follow | grep -E "binding|routing|agent"
+
+# 检查特定会话
+openclaw sessions --active 60
+```
+
+---
+
+## 本章小结
+
+- **多代理架构**：每个 Agent 有独立的工作区、状态和会话
+- **多账号支持**：WhatsApp、Telegram、Discord 支持多账号
+- **Binding 路由**：最具体匹配优先，支持 peer/guild/role 匹配
+- **账号作用域**：`accountId` 控制 Binding 匹配范围
+- **应用场景**：多用户共享、专业分工、生产/测试隔离
+
+## 延伸阅读
+
+- [Binding 配置参考](https://docs.openclaw.ai/gateway/configuration#bindings)
+- [通道路由详解](https://docs.openclaw.ai/channels/channel-routing)
+- [第 9 章：工具系统](chapter-09.md)
+
+---
+
+*上一章：[第 7 章：安全与权限](chapter-07.md) | 下一章：[第 9 章：工具系统](chapter-09.md)*
