@@ -545,7 +545,395 @@ flowchart TD
 
 ---
 
-## 8.7 诊断和调试
+## 8.6.4 协作工作流模式
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| **链式调用** | Agent A → Agent B → Agent C | 流水线处理 |
+| **主从架构** | Main Agent 分派给 Worker Agents | 任务分解 |
+| **发布订阅** | 一个 Agent 输出，多个 Agent 订阅 | 广播通知 |
+| **请求响应** | Agent A 请求，Agent B 响应后返回 | 专业咨询 |
+
+---
+
+## 8.7 Agent 间通信配置
+
+### 8.7.1 通信架构概述
+
+OpenClaw 支持多种 Agent 间通信方式：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Gateway Router                          │
+└─────────────┬───────────────────────────────────────────────┘
+              │
+    ┌─────────┼─────────┬─────────────┐
+    │         │         │             │
+    ▼         ▼         ▼             ▼
+┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐
+│ Main   │ │ Coder  │ │ Writer │ │ Reviewer │
+│ Agent  │ │ Agent  │ │ Agent  │ │ Agent    │
+└───┬────┘ └───┬────┘ └───┬────┘ └────┬─────┘
+    │          │         │           │
+    └──────────┴────┬────┴───────────┘
+                    │
+         ┌──────────▼──────────┐
+         │   Inter-Agent Bus   │
+         │   (消息中间件)       │
+         └──────────┬──────────┘
+                    │
+    ┌───────────────┼───────────────┐
+    │               │               │
+    ▼               ▼               ▼
+┌─────────┐   ┌──────────┐   ┌──────────┐
+│ Shared  │   │ Event    │   │ Task     │
+│ Memory  │   │ Queue    │   │ Registry │
+└─────────┘   └──────────┘   └──────────┘
+```
+
+### 8.7.2 配置 Inter-Agent 路由
+
+在 `gateway.json5` 中启用 Agent 间路由：
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "main",
+        workspace: "~/.openclaw/workspace-main",
+        model: "anthropic/claude-opus-4-6"
+      },
+      {
+        id: "coder",
+        workspace: "~/.openclaw/workspace-coder",
+        model: "anthropic/claude-sonnet-4-6"
+      },
+      {
+        id: "reviewer",
+        workspace: "~/.openclaw/workspace-reviewer",
+        model: "anthropic/claude-opus-4-6"
+      }
+    ],
+
+    // Agent 间通信配置
+    routing: {
+      // 启用内部路由
+      enabled: true,
+
+      // 路由表
+      routes: [
+        {
+          // 代码审查请求
+          from: ["main", "coder"],
+          to: "reviewer",
+          trigger: {
+            type: "keyword",
+            pattern: "/review|代码审查|code review"
+          }
+        },
+        {
+          // 编码任务委派
+          from: ["main"],
+          to: "coder",
+          trigger: {
+            type: "intent",
+            pattern: "/code|实现 | 编写 | 创建文件"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+### 8.7.3 直接消息传递
+
+使用 `openclaw agent send` 命令发送消息到指定 Agent：
+
+```bash
+# 发送消息到 Coder Agent
+openclaw agent send coder --message "实现一个快速排序算法"
+
+# 发送消息并等待响应
+openclaw agent send reviewer --message "审查这个 PR" --wait
+
+# 广播消息到多个 Agent
+openclaw agent broadcast --agents "coder,reviewer" --message "开始新迭代"
+```
+
+### 8.7.4 任务委派配置
+
+在 AGENTS.md 中配置委派规则：
+
+```markdown
+# AGENTS.md - Main Agent
+
+## 委派规则
+
+当遇到以下情况时，将任务委派给专业 Agent：
+
+| 任务类型 | 目标 Agent | 触发条件 |
+|----------|-----------|----------|
+| 代码编写 | @coder | 包含"实现"、"创建"、"修复" |
+| 代码审查 | @reviewer | 包含"审查"、"check"、"review" |
+| 文档编写 | @writer | 包含"文档"、"说明"、"README" |
+| 网络搜索 | @researcher | 包含"搜索"、"查找"、"调研" |
+
+## 委派命令
+
+```bash
+# 委派并等待返回
+@coder --wait 实现用户登录功能
+
+# 委派后继续其他工作（异步）
+@coder 优化数据库查询性能
+
+# 委派时传递上下文
+@reviewer --context ./pr-diff.txt 审查这个变更
+```
+```
+
+### 8.7.5 共享状态配置
+
+配置 Agent 间共享的记忆和状态：
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "main",
+        workspace: "~/.openclaw/workspace-main"
+      },
+      {
+        id: "coder",
+        workspace: "~/.openclaw/workspace-coder",
+
+        // 共享配置
+        shared: {
+          // 共享记忆目录
+          memory: {
+            enabled: true,
+            path: "~/.openclaw/shared/memory",
+            access: ["read", "write"]
+          },
+
+          // 共享知识库
+          knowledge: {
+            enabled: true,
+            path: "~/.openclaw/shared/knowledge",
+            access: ["read"]
+          },
+
+          // 共享会话上下文
+          context: {
+            enabled: true,
+            propagateFrom: "main"
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### 8.7.6 事件驱动通信
+
+配置事件触发器实现松耦合通信：
+
+```json5
+{
+  agents: {
+    routing: {
+      events: {
+        // 定义事件类型
+        types: {
+          "code:complete": {
+            description: "代码任务完成",
+            subscribers: ["reviewer", "main"]
+          },
+          "review:complete": {
+            description: "审查完成",
+            subscribers: ["main"]
+          },
+          "task:failed": {
+            description: "任务失败",
+            subscribers: ["main"]
+          }
+        },
+
+        // 事件处理器
+        handlers: [
+          {
+            event: "code:complete",
+            action: {
+              type: "notify",
+              target: "reviewer",
+              message: "代码已完成，请审查"
+            }
+          },
+          {
+            event: "review:complete",
+            action: {
+              type: "update-status",
+              target: "main",
+              field: "reviewStatus"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+### 8.7.7 子代理调用
+
+在 AGENTS.md 中配置子代理调用：
+
+```markdown
+## 子代理配置
+
+当需要专业能力时，调用子代理：
+
+```json
+{
+  "subagents": {
+    "coder": {
+      "command": "openclaw agent invoke coder",
+      "input": {
+        "task": "${task}",
+        "context": "${context}"
+      },
+      "timeout": 300,
+      "retry": 2
+    },
+    "reviewer": {
+      "command": "openclaw agent invoke reviewer",
+      "input": {
+        "diff": "${diff}",
+        "guidelines": "${reviewGuidelines}"
+      }
+    }
+  }
+}
+```
+
+### 使用示例
+
+调用子代理并获取结果：
+```bash
+result=$(openclaw agent invoke coder --input '{"task":"实现排序"}')
+echo "$result" | openclaw agent invoke reviewer
+```
+```
+
+### 8.7.8 会话状态传递
+
+配置跨 Agent 的会话状态：
+
+```json5
+{
+  agents: {
+    routing: {
+      // 会话状态传递
+      sessionPropagation: {
+        enabled: true,
+
+        // 传递的字段
+        fields: [
+          "userId",
+          "conversationId",
+          "context",
+          "preferences"
+        ],
+
+        // 排除的敏感字段
+        exclude: [
+          "authToken",
+          "credentials"
+        ]
+      }
+    }
+  }
+}
+```
+
+### 8.7.9 完整工作流示例
+
+**场景：代码开发工作流**
+
+```json5
+{
+  agents: {
+    list: [
+      { id: "main", workspace: "~/.openclaw/workspace-main" },
+      { id: "architect", workspace: "~/.openclaw/workspace-architect" },
+      { id: "coder", workspace: "~/.openclaw/workspace-coder" },
+      { id: "tester", workspace: "~/.openclaw/workspace-tester" },
+      { id: "reviewer", workspace: "~/.openclaw/workspace-reviewer" }
+    ],
+
+    routing: {
+      enabled: true,
+
+      // 工作流定义
+      workflow: {
+        name: "code-development",
+        steps: [
+          {
+            name: "design",
+            agent: "architect",
+            input: "${requirement}",
+            output: "${designDoc}"
+          },
+          {
+            name: "implement",
+            agent: "coder",
+            input: "${designDoc}",
+            dependsOn: ["design"],
+            output: "${code}"
+          },
+          {
+            name: "test",
+            agent: "tester",
+            input: "${code}",
+            dependsOn: ["implement"],
+            output: "${testReport}"
+          },
+          {
+            name: "review",
+            agent: "reviewer",
+            input: "${code}",
+            dependsOn: ["test"],
+            output: "${reviewResult}"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+**执行工作流**：
+
+```bash
+# 启动完整工作流
+openclaw workflow run code-development \
+  --input "实现用户认证系统" \
+  --follow
+
+# 查看工作流状态
+openclaw workflow status code-development
+
+# 查看特定步骤日志
+openclaw workflow logs code-development --step implement
+```
+
+---
+
+## 8.8 诊断和调试
 
 ### 8.7.1 诊断命令
 
@@ -578,12 +966,15 @@ openclaw sessions --active 60
 - **多账号支持**：WhatsApp、Telegram、Discord 支持多账号
 - **Binding 路由**：最具体匹配优先，支持 peer/guild/role 匹配
 - **账号作用域**：`accountId` 控制 Binding 匹配范围
+- **Agent 间通信**：支持直接消息、事件驱动、工作流编排
+- **共享状态**：配置共享记忆、知识库和会话上下文
 - **应用场景**：多用户共享、专业分工、生产/测试隔离
 
 ## 延伸阅读
 
 - [Binding 配置参考](https://docs.openclaw.ai/gateway/configuration#bindings)
 - [通道路由详解](https://docs.openclaw.ai/channels/channel-routing)
+- [Agent 间通信指南](https://docs.openclaw.ai/agents/inter-agent)
 - [第 9 章：工具系统](chapter-09.md)
 
 ---
