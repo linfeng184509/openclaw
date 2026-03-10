@@ -1,6 +1,8 @@
 # 飞书软件研发团队 Agent 配置教程
 
 > 本教程详解如何基于 OpenClaw 搭建飞书消息通道的软件研发团队多 Agent 协作系统。
+>
+> **基于实际配置更新**：使用阿里云百炼模型 + 飞书通道
 
 ## 目录
 
@@ -10,11 +12,9 @@
 4. [OpenClaw 基础配置](#4-openclaw-基础配置)
 5. [多 Agent 配置](#5-多-agent-配置)
 6. [飞书通道配置](#6-飞书通道配置)
-7. [Binding 路由配置](#7-binding-路由配置)
-8. [Agent 间通信配置](#8-agent-间通信配置)
-9. [AGENTS.md 配置](#9-agentsmd-配置)
-10. [启动与测试](#10-启动与测试)
-11. [常见问题](#11-常见问题)
+7. [AGENTS.md 配置](#7-agentsmd-配置)
+8. [启动与测试](#8-启动与测试)
+9. [常见问题](#9-常见问题)
 
 ---
 
@@ -138,38 +138,44 @@ node --version
 ### 4.1 初始化配置
 
 ```bash
-# 创建配置目录
-mkdir -p ~/.openclaw
-
-# 初始化配置文件
-openclaw init
+# 配置目录已自动创建：~/.openclaw/
+# 编辑配置文件：C:\Users\gmfen\.openclaw\openclaw.json
 ```
 
-### 4.2 配置 LLM Provider
+### 4.2 配置模型 Provider（阿里云百炼）
 
-编辑 `~/.openclaw/openclaw.json`：
+你的配置已使用阿里云百炼模型：
 
-```json5
+```json
 {
-  models: {
-    providers: {
-      anthropic: {
-        apiKey: "sk-ant-xxxxxxxxxxxxxxxxxxxx",
-        baseURL: "https://api.anthropic.com"
-      },
-      // 或使用其他 Provider
-      openai: {
-        apiKey: "sk-xxxxxxxxxxxxxxxxxxxx",
-        baseURL: "https://api.openai.com/v1"
+  "models": {
+    "providers": {
+      "bailian": {
+        "baseUrl": "https://coding.dashscope.aliyuncs.com/v1",
+        "apiKey": "sk-sp-xxxxxx",
+        "api": "openai-completions",
+        "models": [
+          { "id": "qwen3.5-plus", "name": "qwen3.5-plus" },
+          { "id": "qwen3-coder-plus", "name": "qwen3-coder-plus" },
+          { "id": "glm-5", "name": "glm-5" }
+        ]
       }
     }
-  },
+  }
+}
+```
 
-  gateway: {
-    bind: "0.0.0.0",
-    port: 18789,
-    auth: {
-      tokens: ["your-gateway-token"]
+### 4.3 配置 Gateway
+
+```json
+{
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "your-token"
     }
   }
 }
@@ -179,386 +185,119 @@ openclaw init
 
 ## 5. 多 Agent 配置
 
-### 5.1 创建 Agent 工作区
+### 5.1 配置说明
 
-```bash
-# 创建 PM Agent
-openclaw agents add pm \
-  --workspace ~/.openclaw/workspace-pm
+软件研发团队需要 5 个 Agent 角色，在 `openclaw.json` 的 `agents.list` 中配置：
 
-# 创建 Architect Agent
-openclaw agents add architect \
-  --workspace ~/.openclaw/workspace-architect
-
-# 创建 Coder Agent
-openclaw agents add coder \
-  --workspace ~/.openclaw/workspace-coder
-
-# 创建 Reviewer Agent
-openclaw agents add reviewer \
-  --workspace ~/.openclaw/workspace-reviewer
-
-# 创建 Test Agent
-openclaw agents add test \
-  --workspace ~/.openclaw/workspace-test
-
-# 查看 Agent 列表
-openclaw agents list
-```
-
-### 5.2 完整 agents.list 配置
-
-编辑 `~/.openclaw/openclaw.json`：
-
-```json5
+```json
 {
-  agents: {
-    list: [
+  "agents": {
+    "list": [
       {
-        id: "pm",
-        workspace: "~/.openclaw/workspace-pm",
-        model: "anthropic/claude-opus-4-6",
-        agentDir: "~/.openclaw/agents/pm/agent",
-        tools: {
-          profile: "project-management"
-        }
+        "id": "pm",
+        "name": "PM Agent",
+        "model": "bailian/qwen3.5-plus",
+        "workspace": "C:\\Users\\gmfen\\.openclaw\\workspace-pm",
+        "tools": { "profile": "full" }
       },
       {
-        id: "architect",
-        workspace: "~/.openclaw/workspace-architect",
-        model: "anthropic/claude-opus-4-6",
-        agentDir: "~/.openclaw/agents/architect/agent",
-        tools: {
-          profile: "architecture"
-        }
+        "id": "architect",
+        "name": "Architect Agent",
+        "model": "bailian/qwen3.5-plus",
+        "workspace": "C:\\Users\\gmfen\\.openclaw\\workspace-architect"
       },
       {
-        id: "coder",
-        workspace: "~/.openclaw/workspace-coder",
-        model: "anthropic/claude-sonnet-4-6",
-        agentDir: "~/.openclaw/agents/coder/agent",
-        tools: {
-          profile: "coding"
-        }
+        "id": "coder",
+        "name": "Coder Agent",
+        "model": "bailian/qwen3-coder-plus",
+        "workspace": "C:\\Users\\gmfen\\.openclaw\\workspace-coder"
       },
       {
-        id: "reviewer",
-        workspace: "~/.openclaw/workspace-reviewer",
-        model: "anthropic/claude-opus-4-6",
-        agentDir: "~/.openclaw/agents/reviewer/agent",
-        tools: {
-          profile: "review"
-        }
+        "id": "reviewer",
+        "name": "Reviewer Agent",
+        "model": "bailian/qwen3.5-plus",
+        "workspace": "C:\\Users\\gmfen\\.openclaw\\workspace-reviewer"
       },
       {
-        id: "test",
-        workspace: "~/.openclaw/workspace-test",
-        model: "anthropic/claude-sonnet-4-6",
-        agentDir: "~/.openclaw/agents/test/agent",
-        tools: {
-          profile: "testing"
-        }
+        "id": "tester",
+        "name": "Tester Agent",
+        "model": "bailian/qwen3-coder-next",
+        "workspace": "C:\\Users\\gmfen\\.openclaw\\workspace-tester"
       }
     ]
   }
 }
 ```
 
+### 5.2 模型推荐
+
+| Agent | 推荐模型 | 说明 |
+|-------|----------|------|
+| PM | qwen3.5-plus | 通用能力强，适合协调管理 |
+| Architect | qwen3.5-plus | 架构设计需要强推理 |
+| Coder | qwen3-coder-plus | 专用编程模型 |
+| Reviewer | qwen3.5-plus | 综合能力强 |
+| Tester | qwen3-coder-next | 快速生成测试 |
+
 ---
 
 ## 6. 飞书通道配置
 
-### 6.1 基础通道配置
+### 6.1 配置飞书凭证
 
-编辑 `~/.openclaw/openclaw.json`：
+你的飞书配置已位于 `openclaw.json` 的 `channels.feishu`：
 
-```json5
+```json
 {
-  channels: {
-    feishu: {
-      // 飞书应用凭证
-      appId: "cli_xxxxxxxxxxxxx",
-      appSecret: "xxxxxxxxxxxxxxxx",
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "appId": "cli_a924ca9fa4f85cc1",
+      "appSecret": "Rbns4pWncPqP8BEQ4Ifyzbs4A1DGi4C3",
+      "connectionMode": "websocket",
+      "domain": "feishu",
+      "groupPolicy": "open",
+      "dmPolicy": "pairing",
+      "requireMention": true
+    }
+  }
+}
+```
 
-      // 事件订阅配置
-      verificationToken: "xxxxxxxxxxxxxxxx",
-      encryptKey: "xxxxxxxxxxxxxxxx",
+### 6.2 配置说明
 
-      // 消息接收地址（本地开发用 ngrok）
-      webhookUrl: "https://your-ngrok-url/openclaw/feishu",
+| 参数 | 说明 | 当前值 |
+|------|------|--------|
+| `enabled` | 是否启用 | `true` |
+| `appId` | 飞书应用 ID | `cli_xxx` |
+| `appSecret` | 飞书应用密钥 | `Rbns4pW...` |
+| `connectionMode` | 连接模式 | `websocket` |
+| `groupPolicy` | 群组策略 | `open` (开放) |
+| `dmPolicy` | DM 策略 | `pairing` (配对) |
+| `requireMention` | 是否需要提及 | `true` |
 
-      // 访问控制
-      dmPolicy: "allowlist",  // DM 访问策略
-      allowFrom: [
-        "ou_xxxxxxxx",  // PM 的飞书 ID
-        "ou_yyyyyyyy"   // 架构师的飞书 ID
-      ],
+### 6.3 修改访问控制
 
-      // 群组策略
-      groupPolicy: "allowlist",
-      groups: [
-        "oc_zzzzzzzzzz_project",    // 项目管理群
-        "oc_zzzzzzzzzz_arch",       // 架构设计群
-        "oc_zzzzzzzzzz_dev",        // 开发群
-        "oc_zzzzzzzzzz_review",     // 代码审查群
-        "oc_zzzzzzzzzz_test"        // 测试群
+**重要**：建议将群组策略改为 `allowlist` 并配置允许的群组：
+
+```json
+{
+  "channels": {
+    "feishu": {
+      "groupPolicy": "allowlist",
+      "groups": [
+        "oc_project_management",
+        "oc_architecture_review",
+        "oc_development_team"
       ]
     }
   }
 }
 ```
 
-### 6.2 获取飞书 ID
-
-```bash
-# 查询用户飞书 ID
-openclaw channels feishu lookup-user "@用户名"
-
-# 查询群组飞书 ID
-openclaw channels feishu lookup-chat "群组名称"
-```
-
-### 6.3 启动飞书通道
-
-```bash
-# 启动 Gateway
-openclaw gateway start
-
-# 查看通道状态
-openclaw channels status feishu
-
-# 测试连接
-openclaw channels test feishu
-```
-
 ---
 
-## 7. Binding 路由配置
-
-### 7.1 按群组路由
-
-编辑 `~/.openclaw/openclaw.json`：
-
-```json5
-{
-  bindings: [
-    {
-      // 项目管理群 → PM Agent
-      agentId: "pm",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_project" }
-      }
-    },
-    {
-      // 架构设计群 → Architect Agent
-      agentId: "architect",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_arch" }
-      }
-    },
-    {
-      // 开发群 → Coder Agent
-      agentId: "coder",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_dev" }
-      }
-    },
-    {
-      // 代码审查群 → Reviewer Agent
-      agentId: "reviewer",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_review" }
-      }
-    },
-    {
-      // 测试群 → Test Agent
-      agentId: "test",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_test" }
-      }
-    }
-  ]
-}
-```
-
-### 7.2 按用户路由（DM）
-
-```json5
-{
-  bindings: [
-    {
-      // PM 的 DM → PM Agent
-      agentId: "pm",
-      match: {
-        channel: "feishu",
-        peer: { kind: "direct", id: "ou_xxxxxxxx" }
-      }
-    },
-    {
-      // 架构师的 DM → Architect Agent
-      agentId: "architect",
-      match: {
-        channel: "feishu",
-        peer: { kind: "direct", id: "ou_yyyyyyyy" }
-      }
-    },
-    {
-      // 开发者的 DM → Coder Agent
-      agentId: "coder",
-      match: {
-        channel: "feishu",
-        peer: { kind: "direct", id: "ou_developer" }
-      }
-    }
-  ]
-}
-```
-
-### 7.3 按关键词路由
-
-```json5
-{
-  bindings: [
-    {
-      // 包含"/review"的消息 → Reviewer Agent
-      agentId: "reviewer",
-      match: {
-        channel: "feishu",
-        content: { contains: ["/review", "代码审查"] }
-      }
-    },
-    {
-      // 包含"/test"的消息 → Test Agent
-      agentId: "test",
-      match: {
-        channel: "feishu",
-        content: { contains: ["/test", "测试用例"] }
-      }
-    }
-  ]
-}
-```
-
----
-
-## 8. Agent 间通信配置
-
-### 8.1 agentToAgent 完整配置
-
-```json5
-{
-  agents: {
-    list: [
-      {
-        id: "pm",
-        workspace: "~/.openclaw/workspace-pm",
-        model: "anthropic/claude-opus-4-6",
-
-        // PM Agent 可以调用其他 Agent
-        agentToAgent: {
-          allowedTargets: ["architect", "coder", "reviewer", "test"],
-          mode: "async",
-          timeout: 300,
-
-          targets: {
-            architect: {
-              agentId: "architect",
-              invokeMode: "sync",
-              timeout: 600,
-              inputMap: {
-                requirement: "${currentRequirement}",
-                context: "${projectContext}"
-              }
-            },
-            coder: {
-              agentId: "coder",
-              invokeMode: "async",
-              timeout: 900,
-              callback: {
-                notify: true,
-                target: "pm",
-                event: "code:complete"
-              }
-            },
-            reviewer: {
-              agentId: "reviewer",
-              invokeMode: "sync",
-              timeout: 300,
-              inputMap: {
-                diff: "${lastCommit.diff}",
-                prUrl: "${pr.url}"
-              }
-            },
-            test: {
-              agentId: "test",
-              invokeMode: "async",
-              timeout: 600,
-              inputMap: {
-                feature: "${feature.description}",
-                code: "${feature.code}"
-              }
-            }
-          },
-
-          // 工作流编排
-          orchestration: {
-            chain: ["architect", "coder", "reviewer", "test"]
-          }
-        }
-      },
-      {
-        id: "coder",
-        workspace: "~/.openclaw/workspace-coder",
-        model: "anthropic/claude-sonnet-4-6",
-
-        subAgent: {
-          enabled: true,
-          capabilities: [
-            "code-generation",
-            "refactoring",
-            "bug-fix",
-            "test-writing"
-          ],
-          languages: ["python", "javascript", "typescript", "go", "rust"],
-          output: {
-            format: "patch",
-            includeExplanation: true
-          }
-        }
-      },
-      {
-        id: "reviewer",
-        workspace: "~/.openclaw/workspace-reviewer",
-        model: "anthropic/claude-opus-4-6",
-
-        subAgent: {
-          enabled: true,
-          capabilities: [
-            "code-review",
-            "security-audit",
-            "performance-check"
-          ],
-          review: {
-            checkSecurity: true,
-            checkPerformance: true,
-            checkStyle: true,
-            suggestImprovements: true
-          }
-        }
-      }
-    ]
-  }
-}
-```
-
----
-
-## 9. AGENTS.md 配置
+## 7. AGENTS.md 配置
 
 ### 9.1 PM Agent 配置
 
@@ -694,14 +433,18 @@ openclaw channels test feishu
 
 ---
 
-## 10. 启动与测试
+## 8. 启动与测试
 
-### 10.1 启动 Gateway
+### 8.1 验证配置
 
 ```bash
-# 验证配置
+cd "C:/Users/gmfen/.openclaw"
 openclaw config validate
+```
 
+### 8.2 启动 Gateway
+
+```bash
 # 启动 Gateway
 openclaw gateway start
 
@@ -712,42 +455,37 @@ openclaw gateway start --daemon
 openclaw gateway status
 ```
 
-### 10.2 测试飞书连接
+### 8.3 测试飞书连接
 
 ```bash
-# 发送测试消息到飞书群
-openclaw channels feishu send \
-  --chat "oc_zzzzzzzzzz_project" \
-  --message "PM Agent 已上线，准备接收任务"
+# 查看飞书通道状态
+openclaw channels status feishu
 
-# 测试路由
-openclaw gateway call bindings.match \
-  --params '{"channel":"feishu","peer":{"kind":"group","id":"oc_zzzzzzzzzz_project"}}'
+# 测试连接
+openclaw channels test feishu
 ```
 
-### 10.3 测试 Agent 协作
+### 8.4 配置飞书群组
 
-在飞书「项目管理群」发送：
+在飞书中将应用添加到以下群组：
+1. 项目管理群 → PM Agent
+2. 架构设计群 → Architect Agent
+3. 开发群 → Coder Agent
+4. 代码审查群 → Reviewer Agent
+5. 测试群 → Tester Agent
 
+### 8.5 测试 Agent 协作
+
+在飞书群中发送：
 ```
-/requirement 实现用户登录功能，支持邮箱和密码，使用 JWT token
+/pm 分析这个需求：实现用户登录功能
 ```
 
-预期流程：
-1. PM Agent 接收需求并分析
-2. PM Agent 委派 Architect Agent 设计技术方案
-3. PM Agent 委派 Coder Agent 实现代码
-4. Coder Agent 完成后通知 Reviewer Agent 审查
-5. Reviewer Agent 审查通过后通知 Test Agent 编写测试
-
-### 10.4 查看日志
+### 8.6 查看日志
 
 ```bash
 # 实时查看日志
 openclaw logs --follow
-
-# 查看特定 Agent 日志
-openclaw logs --agent pm --follow
 
 # 查看错误日志
 openclaw logs --level error
@@ -755,168 +493,85 @@ openclaw logs --level error
 
 ---
 
-## 11. 常见问题
+## 9. 常见问题
 
-### 11.1 飞书消息收不到
+### 9.1 飞书消息收不到
 
 **检查清单**：
 1. 确认应用已发布并添加到群组
-2. 确认事件订阅 URL 可访问
-3. 确认 Verification Token 配置正确
-4. 检查防火墙/网络设置
+2. 确认 WebSocket 连接正常
+3. 检查 `dmPolicy` 和 `groupPolicy` 配置
+4. 确认机器人在群组中
 
 ```bash
 # 查看飞书通道状态
 openclaw channels status feishu --verbose
-
-# 测试 webhook
-openclaw channels feishu test-webhook
 ```
 
-### 11.2 Agent 路由错误
+### 9.2 Agent 路由错误
 
 **诊断命令**：
 ```bash
-# 查看 Binding 匹配
-openclaw agents list --bindings
+# 查看 Agent 列表
+openclaw agents list
 
 # 查看会话状态
 openclaw sessions --active
 
-# 查看路由日志
-openclaw logs | grep -E "binding|routing"
+# 查看日志
+openclaw logs | grep -E "routing|agent"
 ```
 
-### 11.3 agentToAgent 调用失败
-
-**检查项**：
-1. 确认目标 Agent 已配置 `subAgent.enabled: true`
-2. 确认 `allowedTargets` 包含目标 Agent
-3. 检查超时设置是否足够
+### 9.3 配置验证失败
 
 ```bash
-# 测试子代理调用
-openclaw agent test-invoke coder --input '{"task":"test"}'
+# 验证配置
+openclaw config validate
 
-# 查看调用历史
-openclaw agent invoke-history --limit 10
+# 如果有错误，根据提示修复
 ```
 
-### 11.4 飞书 ID 获取方法
+### 9.4 工作区目录不存在
+
+创建工作区目录并创建 AGENTS.md：
 
 ```bash
-# 方法 1：通过用户名查询
-openclaw channels feishu lookup-user "@张三"
-
-# 方法 2：通过群组名查询
-openclaw channels feishu lookup-chat "项目管理群"
-
-# 方法 3：查看消息日志获取 ID
-openclaw logs --follow | grep -E "peer|chatId"
+mkdir -p "C:/Users/gmfen/.openclaw/workspace-pm"
+# 然后在该目录下创建 AGENTS.md 文件
 ```
 
 ---
 
-## 附录：完整配置示例
+## 附录：你的当前配置
 
-### A.1 完整 openclaw.json
+### A.1 配置位置
 
-```json5
-{
-  // LLM 配置
-  models: {
-    providers: {
-      anthropic: {
-        apiKey: "sk-ant-xxxxxxxxxxxxxxxxxxxx"
-      }
-    }
-  },
+- **配置文件**: `C:\Users\gmfen\.openclaw\openclaw.json`
+- **工作区目录**: `C:\Users\gmfen\.openclaw\workspace-*`
+- **飞书插件**: `@openclaw/feishu@2026.3.2`
 
-  // Gateway 配置
-  gateway: {
-    bind: "0.0.0.0",
-    port: 18789,
-    auth: {
-      tokens: ["your-gateway-token"]
-    }
-  },
+### A.2 已配置的 Agent
 
-  // 多 Agent 配置
-  agents: {
-    list: [
-      {
-        id: "pm",
-        workspace: "~/.openclaw/workspace-pm",
-        model: "anthropic/claude-opus-4-6"
-      },
-      {
-        id: "architect",
-        workspace: "~/.openclaw/workspace-architect",
-        model: "anthropic/claude-opus-4-6"
-      },
-      {
-        id: "coder",
-        workspace: "~/.openclaw/workspace-coder",
-        model: "anthropic/claude-sonnet-4-6"
-      },
-      {
-        id: "reviewer",
-        workspace: "~/.openclaw/workspace-reviewer",
-        model: "anthropic/claude-opus-4-6"
-      },
-      {
-        id: "test",
-        workspace: "~/.openclaw/workspace-test",
-        model: "anthropic/claude-sonnet-4-6"
-      }
-    ]
-  },
+| ID | 名称 | 模型 | 工作区 |
+|----|------|------|--------|
+| pm | PM Agent | qwen3.5-plus | workspace-pm |
+| architect | Architect Agent | qwen3.5-plus | workspace-architect |
+| coder | Coder Agent | qwen3-coder-plus | workspace-coder |
+| reviewer | Reviewer Agent | qwen3.5-plus | workspace-reviewer |
+| tester | Tester Agent | qwen3-coder-next | workspace-tester |
 
-  // 飞书通道配置
-  channels: {
-    feishu: {
-      appId: "cli_xxxxxxxxxxxxx",
-      appSecret: "xxxxxxxxxxxxxxxx",
-      verificationToken: "xxxxxxxxxxxxxxxx",
-      encryptKey: "xxxxxxxxxxxxxxxx",
-      dmPolicy: "allowlist",
-      allowFrom: ["ou_xxxxxxxx"],
-      groupPolicy: "allowlist",
-      groups: ["oc_zzzzzzzzzz_*"]
-    }
-  },
+### A.3 飞书配置
 
-  // Binding 路由配置
-  bindings: [
-    {
-      agentId: "pm",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_project" }
-      }
-    },
-    {
-      agentId: "coder",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_dev" }
-      }
-    },
-    {
-      agentId: "reviewer",
-      match: {
-        channel: "feishu",
-        peer: { kind: "group", id: "oc_zzzzzzzzzz_review" }
-      }
-    }
-  ]
-}
-```
+- **App ID**: `cli_a924ca9fa4f85cc1`
+- **连接模式**: WebSocket
+- **群组策略**: Open (开放)
+- **DM 策略**: Pairing (配对)
+- **需要提及**: 是
 
 ---
 
 ## 下一步
 
-- [多代理路由配置](../chapter-08.md)
-- [工具系统配置](../chapter-09.md)
-- [安全与权限](../chapter-07.md)
+- [第 8 章：多代理路由](../chapter-08.md)
+- [第 9 章：工具系统](../chapter-09.md)
+- [第 3 章：核心概念](../chapter-03.md)
